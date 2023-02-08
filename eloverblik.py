@@ -134,7 +134,7 @@ def get_usage_data(meter_ids, args):
                 for time_serie in result['MyEnergyData_MarketDocument']['TimeSeries']:
                     for period in time_serie['Period']:
                         resolution = period['resolution']
-                        # TODO: Convert to local time
+                        # TODO: Convert to local time / have local time args option
                         timestart_utc = period['timeInterval']['start']
                         timeend_utc = period['timeInterval']['end']
                         period_rows = [
@@ -144,7 +144,7 @@ def get_usage_data(meter_ids, args):
                                 'timestart_utc': timestart_utc,
                                 'timeend_utc': timeend_utc,
                                 'point_position': point['position'],
-                                'point_out_quantity': point['out_Quantity.quantity'],
+                                'point_out_quantity': point['out_Quantity.quantity'],   # TODO: Comma in decimal?
                                 'point_out_quality': point['out_Quantity.quality']
                             }
                             for point in period['Point']
@@ -184,7 +184,7 @@ def get_charges_data(meter_ids, args):
                         'validtodate': item['validToDate'],
                         'periodtype': item['periodType'],
                         'position': '',
-                        'price': item['price'],
+                        'price': item['price'],     # TODO: Comma in decimal?
                         'quantity': item['quantity']
                     }
                     writer.writerow(subscription_row)
@@ -200,7 +200,7 @@ def get_charges_data(meter_ids, args):
                         'validtodate': item['validToDate'],
                         'periodtype': item['periodType'],
                         'position': '',
-                        'price': item['price'],
+                        'price': item['price'],     # TODO: Comma in decimal?
                         'quantity': item['quantity']
                     }
                     writer.writerow(subscription_row)
@@ -223,7 +223,7 @@ def get_charges_data(meter_ids, args):
                             'validtodate': validtodate,
                             'periodtype': periodtype,
                             'position': point['position'],
-                            'price': point['price'],
+                            'price': point['price'],  # TODO: Comma in decimal?
                             'quantity': ''
                         }
                         for point in item['prices']
