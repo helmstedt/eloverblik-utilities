@@ -12,6 +12,7 @@ import pickle
 import requests
 import sys
 import time
+from zoneinfo import ZoneInfo
 
 # Set token filename
 token_filename = 'eloverblik.token'
@@ -38,13 +39,13 @@ session.headers = {
 }
 
 def get_or_set_data_access_token(token):
-    # If an existing data access token is less than 22 hours old, use it and return
+    # If an existing data access token is less than 12 hours old, use it and return
     if exists(data_access_token_filename):
         with open(data_access_token_filename, 'rb') as data_access_token_file:
-            token_and_save_time = pickle.load(data_access_token_file)
-            if not datetime.now() - token_and_save_time[0] > timedelta(hours=22):
+            save_time_and_token = pickle.load(data_access_token_file)
+            if not datetime.now() - save_time_and_token[0] > timedelta(hours=12):
                 print('Existing data access token found. Using this token.')
-                session.headers['Authorization'] = 'Bearer ' + token_and_save_time[1]
+                session.headers['Authorization'] = 'Bearer ' + save_time_and_token[1]
                 return
     # Data access token does not exist or is too old
     # Check whether API is alive
@@ -76,9 +77,9 @@ def get_endpoint(endpoint, json=None):
     tries = 1
     while tries <= api_retries:
         if not json:
-            response = session.get(base_url + endpoint)
+            response = session.get(base_url + endpoint, timeout=10)
         else:
-            response = session.post(base_url + endpoint, json=json)
+            response = session.post(base_url + endpoint, json=json, timeout=10)
         # Succesful request
         if response.status_code == 200:
             return response.json()
@@ -112,11 +113,11 @@ def list_meters():
         meter_count += 1
     sys.exit('All meters printed. Exiting.')
 
-def get_usage_data(meter_ids, args):
+def get_usage_data(meter_ids, args, periods):
     print('Starting to save usage data...')
     # Prepare csv file for writing
     with open('eloverblik_usage_data.csv', 'w', newline='') as csvfile:
-        fieldnames = ['meter_id', 'resolution', 'timestart_utc', 'timeend_utc', 'point_position', 'point_out_quantity', 'point_out_quality']
+        fieldnames = ['meter_id', 'resolution', 'timestart_utc', 'timestart_denmark', 'timeend_utc', 'timeend_denmark', 'point_position', 'point_out_quantity', 'point_out_quality']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         for meter_id in meter_ids:
@@ -128,32 +129,42 @@ def get_usage_data(meter_ids, args):
                     ]
                 }
             }
-            usage_data_endpoint = 'meterdata/gettimeseries/' + args.fromdate + '/' + args.todate + '/' + args.aggregation
-            get_meter_usage_data = get_endpoint(usage_data_endpoint, meter_json)
-            for result in get_meter_usage_data['result']:
-                for time_serie in result['MyEnergyData_MarketDocument']['TimeSeries']:
-                    for period in time_serie['Period']:
-                        resolution = period['resolution']
-                        # TODO: Convert to local time / have local time args option
-                        timestart_utc = period['timeInterval']['start']
-                        timeend_utc = period['timeInterval']['end']
-                        period_rows = [
-                            {
-                                'meter_id': meter_id,
-                                'resolution': resolution,
-                                'timestart_utc': timestart_utc,
-                                'timeend_utc': timeend_utc,
-                                'point_position': point['position'],
-                                'point_out_quantity': point['out_Quantity.quantity'],   # TODO: Comma in decimal?
-                                'point_out_quality': point['out_Quantity.quality']
-                            }
-                            for point in period['Point']
-                        ]
-                        writer.writerows(period_rows)
+            for date_period in periods:
+                print(f'Saving usage date for period {date_period[0]} to {date_period[1]}...')
+                usage_data_endpoint = 'meterdata/gettimeseries/' + date_period[0] + '/' + date_period[1] + '/' + args.aggregation
+                get_meter_usage_data = get_endpoint(usage_data_endpoint, meter_json)
+                for result in get_meter_usage_data['result']:
+                    for time_serie in result['MyEnergyData_MarketDocument']['TimeSeries']:
+                        for period in time_serie['Period']:
+                            resolution = period['resolution']
+                            timestart_utc = period['timeInterval']['start']
+                            timestart_datetime = datetime.strptime(timestart_utc, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=ZoneInfo('UTC'))
+                            timestart_denmark = timestart_datetime.astimezone(ZoneInfo('Europe/Copenhagen'))
+                            timestart_denmark_str = datetime.strftime(timestart_denmark, '%Y-%m-%dT%H:%M:%S')
+                            timeend_utc = period['timeInterval']['end']
+                            timeend_datetime = datetime.strptime(timeend_utc, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=ZoneInfo('UTC'))
+                            timeend_denmark = timeend_datetime.astimezone(ZoneInfo('Europe/Copenhagen'))
+                            timeend_denmark_str = datetime.strftime(timeend_denmark, '%Y-%m-%dT%H:%M:%S')
+                            period_rows = [
+                                {
+                                    'meter_id': meter_id,
+                                    'resolution': resolution,
+                                    'timestart_utc': timestart_utc,
+                                    'timestart_denmark': timestart_denmark_str,
+                                    'timeend_utc': timeend_utc,
+                                    'timeend_denmark': timeend_denmark_str,
+                                    'point_position': point['position'],
+                                    'point_out_quantity': str(point['out_Quantity.quantity']).replace('.',','),
+                                    'point_out_quality': point['out_Quantity.quality']
+                                }
+                                for point in period['Point']
+                            ]
+                            writer.writerows(period_rows)
+                print(f'Saved usage date for period {date_period[0]} to {date_period[1]}')
             print(f'Saved usage data for meter {meter_id}')
         print(f'Saved usage data for meter(s)')    
 
-def get_charges_data(meter_ids, args):
+def get_charges_data(meter_ids):
     print('Starting to save charges data...')
     # Prepare csv file for writing
     with open('eloverblik_charges_data.csv', 'w', newline='') as csvfile:
@@ -161,7 +172,7 @@ def get_charges_data(meter_ids, args):
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         for meter_id in meter_ids:
-            print(f'Getting and saving usage data for meter id {meter_id}...')
+            print(f'Getting and saving charges data for meter id {meter_id}...')
             meter_json = {
                 "meteringPoints": {
                     "meteringPoint": [
@@ -184,7 +195,7 @@ def get_charges_data(meter_ids, args):
                         'validtodate': item['validToDate'],
                         'periodtype': item['periodType'],
                         'position': '',
-                        'price': item['price'],     # TODO: Comma in decimal?
+                        'price': str(item['price']).replace('.',','),
                         'quantity': item['quantity']
                     }
                     writer.writerow(subscription_row)
@@ -200,7 +211,7 @@ def get_charges_data(meter_ids, args):
                         'validtodate': item['validToDate'],
                         'periodtype': item['periodType'],
                         'position': '',
-                        'price': item['price'],     # TODO: Comma in decimal?
+                        'price': str(item['price']).replace('.',','),
                         'quantity': item['quantity']
                     }
                     writer.writerow(subscription_row)
@@ -223,7 +234,7 @@ def get_charges_data(meter_ids, args):
                             'validtodate': validtodate,
                             'periodtype': periodtype,
                             'position': point['position'],
-                            'price': point['price'],  # TODO: Comma in decimal?
+                            'price': str(point['price']).replace('.',','),
                             'quantity': ''
                         }
                         for point in item['prices']
@@ -257,12 +268,12 @@ def main():
     if not exists(token_filename):
         print('No token from eloverblik.dk saved. Paste your token here.')
         token = str(input('Token: '))
-        with open(token_filename, 'wt') as token_file:
-            token_file.write(token)
+        with open(token_filename, 'wb') as token_file:
+            pickle.dump(token, token_file)
     else:
-        with open(token_filename, 'rt') as token_file:
-            token = token_file.readline()
-    
+        with open(token_filename, 'rb') as token_file:
+            token = pickle.load(token_file)
+  
     # If mode is list meters, get a list of meters
     if args.mode == 'list':
         print('Listing available meters...')
@@ -286,11 +297,26 @@ def main():
                 sys.exit('Error: Your from date cannot be after today. Exiting.')
             elif to_date > today + timedelta(days=1):
                 sys.exit('Error: Your to date cannot be later than one day after today. Exiting.')
-            # TODO: Instead, slice larger time periods in 730 day slices
-            elif to_date > from_date + timedelta(days=730):
-                sys.exit('Error: Over 730 days between from and to date. Reduce number of days in period. Exiting.')
         except ValueError:
             sys.exit('Error: From or to date in invalid format. Format must be yyyy-mm-dd with no quotes. Exiting.')
+        # Periods must be a maximum of 730 days, so longer periods are sliced into smaller pieces
+        if to_date > from_date + timedelta(days=730):
+            periods = []
+            start_of_period = from_date
+            slice_finished = False
+            while slice_finished == False:
+                end_of_period = start_of_period + timedelta(days=730)
+                if end_of_period <= to_date:
+                    periods.append([datetime.strftime(start_of_period, '%Y-%m-%d'), datetime.strftime(end_of_period, '%Y-%m-%d')])
+                    start_of_period = end_of_period + timedelta(days=1)
+                else:
+                    end_of_period = to_date
+                    periods.append([datetime.strftime(start_of_period, '%Y-%m-%d'), datetime.strftime(end_of_period, '%Y-%m-%d')])
+                    slice_finished = True
+        # Smaller periods are saved as a list in a list to use the same for loop later
+        else:
+            periods = [[args.fromdate, args.todate]]
+
         print('Getting data...')
         # Get data access token
         get_or_set_data_access_token(token)
@@ -310,9 +336,9 @@ def main():
             # Get data from meters
             print('Getting and saving usage and charges data for meter(s)...')
             # Get usage data
-            get_usage_data(meter_ids, args)
+            get_usage_data(meter_ids, args, periods)
             # Get charges data
-            get_charges_data(meter_ids, args)
+            get_charges_data(meter_ids)
             # Print status
             print('Saved usage and charges data for meter(s)')
         else:
