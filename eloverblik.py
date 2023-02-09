@@ -38,6 +38,7 @@ session.headers = {
     'User-Agent': 'Eloverblik-Python'
 }
 
+# Gets a saved data token if it is not too old, alternatively gets a new token
 def get_or_set_data_access_token(token):
     # If an existing data access token is less than 12 hours old, use it and return
     if exists(data_access_token_filename):
@@ -73,6 +74,7 @@ def get_or_set_data_access_token(token):
     else:
         sys.exit('Error: API is down. Exiting.')
 
+# Request an endpoint and return data
 def get_endpoint(endpoint, json=None):
     tries = 1
     while tries <= api_retries:
@@ -98,8 +100,8 @@ def get_endpoint(endpoint, json=None):
         print(f'Latest API response content was: {response.text}')
         sys.exit('API request failed. Exiting.')
 
+# Lists all metering points
 def list_meters():
-    # Get ids of meters
     print('Getting list of meters...')
     get_metering_points = get_endpoint('meteringpoints/meteringpoints')
     print(f'Found {len(get_metering_points["result"])} meter(s)')
@@ -113,6 +115,7 @@ def list_meters():
         meter_count += 1
     sys.exit('All meters printed. Exiting.')
 
+# Gets and saves metering point electricity usage data as a csv file
 def get_usage_data(meter_ids, args, periods):
     print('Starting to save usage data...')
     # Prepare csv file for writing
@@ -164,6 +167,7 @@ def get_usage_data(meter_ids, args, periods):
             print(f'Saved usage data for meter {meter_id}')
         print(f'Saved usage data for meter(s)')    
 
+# Gets and saves metering point electricity charges data as a csv file
 def get_charges_data(meter_ids):
     print('Starting to save charges data...')
     # Prepare csv file for writing
@@ -243,8 +247,9 @@ def get_charges_data(meter_ids):
             print(f'Saved charges data for meter {meter_id}')
         print(f'Saved charges data for meter(s)')      
 
+# Main program logic
 def main():
-    # Set and load parser arguments
+    # Define and load parser arguments
     parser = argparse.ArgumentParser(description='Get data on electricity usage from eloverblik.dk')
     parser.add_argument('-m', '--mode', help='Mode: List meters or get data ', type=str, choices=['list', 'get'], required=True)
     parser.add_argument('-n', '--meterid', help='Get data from this specific meter in get mode', type=str)
@@ -259,6 +264,7 @@ def main():
     if args.deletetoken:
         print('Deleting existing token file if it exists')
         os.remove(token_filename)
+
     # Delete data token file if set as argument
     if args.refreshdatatoken:
         print('Deleting existing data access token file if it exists')
@@ -299,6 +305,7 @@ def main():
                 sys.exit('Error: Your to date cannot be later than one day after today. Exiting.')
         except ValueError:
             sys.exit('Error: From or to date in invalid format. Format must be yyyy-mm-dd with no quotes. Exiting.')
+
         # Periods must be a maximum of 730 days, so longer periods are sliced into smaller pieces
         if to_date > from_date + timedelta(days=730):
             periods = []
@@ -318,8 +325,10 @@ def main():
             periods = [[args.fromdate, args.todate]]
 
         print('Getting data...')
+
         # Get data access token
         get_or_set_data_access_token(token)
+
         # Specifik meter id is set by user
         if args.meterid:
             meter_ids = [args.meterid]
@@ -330,8 +339,7 @@ def main():
             get_metering_points = get_endpoint('meteringpoints/meteringpoints')
             print(f'Found {len(get_metering_points["result"])} meters')
             meter_ids = [meter['meteringPointId'] for meter in get_metering_points['result']]
-        # TODO: Recommendation is to get 10 meter ids at the same time, so instead of getting one by one
-        # slice into lists of 10 meter ids. Remember to update CSV creation to use "mRID" from json when saving
+
         if meter_ids:
             # Get data from meters
             print('Getting and saving usage and charges data for meter(s)...')
