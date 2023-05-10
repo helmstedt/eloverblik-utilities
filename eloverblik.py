@@ -89,6 +89,8 @@ def get_endpoint(endpoint, json=None):
         elif response.status_code == 429 or response.status_code == 503:
             tries += 1
             time.sleep(1)
+        elif response.status_code == 403:
+            print(f'API reports a 403 forbidden error. Please check your token is correct')
         else:
             print(f'API returned an unknown status code')
             print(f'Latest API response status code was: {response.status_code}')
