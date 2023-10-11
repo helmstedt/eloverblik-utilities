@@ -21,9 +21,6 @@ data_access_token_filename = 'eloverblik_data_access.token'
 # Number of API retries (API often returns 503 errors)
 api_retries = 10
 
-# API base url
-base_url = 'https://api.eloverblik.dk/CustomerApi/api/'
-
 # Get today's date
 today = date.today()
 
@@ -75,7 +72,7 @@ def get_or_set_data_access_token(token):
         sys.exit('Error: API is down. Exiting.')
 
 # Request an endpoint and return data
-def get_endpoint(endpoint, json=None):
+def get_endpoint(base_url, endpoint, json=None):
     tries = 1
     while tries <= api_retries:
         if not json:
@@ -105,7 +102,7 @@ def get_endpoint(endpoint, json=None):
 # Lists all metering points
 def list_meters():
     print('Getting list of meters...')
-    get_metering_points = get_endpoint('meteringpoints/meteringpoints')
+    get_metering_points = get_endpoint(base_url, 'meteringpoints/meteringpoints')
     print(f'Found {len(get_metering_points["result"])} meter(s)')
     print('Printing list of meter(s)...\n')
     for meter in get_metering_points['result']:
@@ -118,7 +115,7 @@ def list_meters():
     sys.exit('All meters printed. Exiting.')
 
 # Gets and saves metering point electricity usage data as a csv file
-def get_usage_data(meter_ids, args, periods):
+def get_usage_data(base_url, meter_ids, args, periods):
     print('Starting to save usage data...')
     # Prepare csv file for writing
     with open('eloverblik_usage_data.csv', 'w', newline='') as csvfile:
@@ -137,7 +134,7 @@ def get_usage_data(meter_ids, args, periods):
             for date_period in periods:
                 print(f'Saving usage date for period {date_period[0]} to {date_period[1]}...')
                 usage_data_endpoint = 'meterdata/gettimeseries/' + date_period[0] + '/' + date_period[1] + '/' + args.aggregation
-                get_meter_usage_data = get_endpoint(usage_data_endpoint, meter_json)
+                get_meter_usage_data = get_endpoint(base_url, usage_data_endpoint, meter_json)
                 for result in get_meter_usage_data['result']:
                     for time_serie in result['MyEnergyData_MarketDocument']['TimeSeries']:
                         for period in time_serie['Period']:
@@ -182,7 +179,7 @@ def get_usage_data(meter_ids, args, periods):
         print(f'Saved usage data for meter(s)')    
 
 # Gets and saves metering point electricity charges data as a csv file
-def get_charges_data(meter_ids):
+def get_charges_data(base_url, meter_ids):
     print('Starting to save charges data...')
     # Prepare csv file for writing
     with open('eloverblik_charges_data.csv', 'w', newline='') as csvfile:
@@ -199,7 +196,7 @@ def get_charges_data(meter_ids):
                 }
             }
             charges_data_endpoint = 'meteringpoints/meteringpoint/getcharges'
-            get_meter_charges_data = get_endpoint(charges_data_endpoint, meter_json)
+            get_meter_charges_data = get_endpoint(base_url, charges_data_endpoint, meter_json)
             for result in get_meter_charges_data['result']:
                 for item in result['result']['fees']:
                     chargetype = 'fee'
@@ -265,6 +262,7 @@ def get_charges_data(meter_ids):
 def main():
     # Define and load parser arguments
     parser = argparse.ArgumentParser(description='Get data on electricity usage from eloverblik.dk')
+    parser.add_argument('-p', '--api', help='API: Use customer or third party api', type=str, choices=['customer', 'thirdparty'], default='customer')
     parser.add_argument('-m', '--mode', help='Mode: List meters or get data ', type=str, choices=['list', 'get'], required=True)
     parser.add_argument('-n', '--meterid', help='Get data from this specific meter in get mode', type=str)
     parser.add_argument('-a', '--aggregation', help='Get timeseries data with this aggregation in get mode', choices=['Actual', 'Quarter', 'Hour', 'Day', 'Month', 'Year'], default='Actual', type=str)
@@ -273,7 +271,15 @@ def main():
     parser.add_argument('-d', '--deletetoken', help='Delete existing token file', action='store_true')
     parser.add_argument('-r', '--refreshdatatoken', help='Force refresh of data access token by deleting token file', action='store_true')
     args = parser.parse_args()
-
+    
+    if args.api == 'thirdparty':
+        api_type = 'ThirdPartyApi'
+    else:
+        api_type = 'CustomerApi'
+    
+    # API base url
+    base_url = f'https://api.eloverblik.dk/{api_type}/api/'
+    
     # Delete token file if set as argument
     if args.deletetoken:
         print('Deleting existing token file if it exists')
@@ -350,7 +356,7 @@ def main():
         else:
             # Get ids of meters
             print('Getting list of meters...')
-            get_metering_points = get_endpoint('meteringpoints/meteringpoints')
+            get_metering_points = get_endpoint(base_url, 'meteringpoints/meteringpoints')
             print(f'Found {len(get_metering_points["result"])} meters')
             meter_ids = [meter['meteringPointId'] for meter in get_metering_points['result']]
 
@@ -358,9 +364,9 @@ def main():
             # Get data from meters
             print('Getting and saving usage and charges data for meter(s)...')
             # Get usage data
-            get_usage_data(meter_ids, args, periods)
+            get_usage_data(base_url, meter_ids, args, periods)
             # Get charges data
-            get_charges_data(meter_ids)
+            get_charges_data(base_url, meter_ids)
             # Print status
             print('Saved usage and charges data for meter(s)')
         else:
