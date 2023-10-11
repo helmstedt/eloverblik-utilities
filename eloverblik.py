@@ -122,7 +122,7 @@ def get_usage_data(meter_ids, args, periods):
     print('Starting to save usage data...')
     # Prepare csv file for writing
     with open('eloverblik_usage_data.csv', 'w', newline='') as csvfile:
-        fieldnames = ['meter_id', 'resolution', 'timestart_utc', 'timestart_denmark', 'timeend_utc', 'timeend_denmark', 'point_position', 'point_out_quantity', 'point_out_quality']
+        fieldnames = ['meter_id', 'resolution', 'timestart_utc', 'precise_timestart_utc', 'hour_timestart_utc', 'timestart_denmark', 'precise_timestart_denmark', 'hour_timestart_denmark', 'timeend_utc', 'precise_timeend_utc', 'hour_timeend_utc', 'timeend_denmark', 'precise_timeend_denmark', 'hour_timeend_denmark', 'hour_interval_denmark', 'hour_interval_utc', 'point_position', 'point_out_quantity', 'point_out_quality']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         for meter_id in meter_ids:
@@ -143,10 +143,12 @@ def get_usage_data(meter_ids, args, periods):
                         for period in time_serie['Period']:
                             resolution = period['resolution']
                             timestart_utc = period['timeInterval']['start']
+                            timestart_utc_datetime = datetime.strptime(timestart_utc, '%Y-%m-%dT%H:%M:%SZ')
                             timestart_datetime = datetime.strptime(timestart_utc, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=ZoneInfo('UTC'))
                             timestart_denmark = timestart_datetime.astimezone(ZoneInfo('Europe/Copenhagen'))
                             timestart_denmark_str = datetime.strftime(timestart_denmark, '%Y-%m-%dT%H:%M:%S')
                             timeend_utc = period['timeInterval']['end']
+                            timeend_utc_datetime = datetime.strptime(timeend_utc, '%Y-%m-%dT%H:%M:%SZ')
                             timeend_datetime = datetime.strptime(timeend_utc, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=ZoneInfo('UTC'))
                             timeend_denmark = timeend_datetime.astimezone(ZoneInfo('Europe/Copenhagen'))
                             timeend_denmark_str = datetime.strftime(timeend_denmark, '%Y-%m-%dT%H:%M:%S')
@@ -155,9 +157,19 @@ def get_usage_data(meter_ids, args, periods):
                                     'meter_id': meter_id,
                                     'resolution': resolution,
                                     'timestart_utc': timestart_utc,
+                                    'precise_timestart_utc': datetime.strftime(timestart_utc_datetime + timedelta(hours=int(point['position'])-1), '%Y-%m-%dT%H:%M:%S') if args.aggregation in ['Actual','Hour'] else '-',
+                                    'hour_timestart_utc': datetime.strftime(timestart_utc_datetime + timedelta(hours=int(point['position'])-1), '%H:%M:%S') if args.aggregation in ['Actual','Hour'] else '-',
                                     'timestart_denmark': timestart_denmark_str,
+                                    'precise_timestart_denmark': datetime.strftime(timestart_denmark + timedelta(hours=int(point['position'])-1), '%Y-%m-%dT%H:%M:%S') if args.aggregation in ['Actual','Hour'] else '-',
+                                    'hour_timestart_denmark': datetime.strftime(timestart_denmark + timedelta(hours=int(point['position'])-1), '%H:%M:%S') if args.aggregation in ['Actual','Hour'] else '-',
                                     'timeend_utc': timeend_utc,
+                                    'precise_timeend_utc': datetime.strftime(timeend_utc_datetime + timedelta(hours=int(point['position'])), '%Y-%m-%dT%H:%M:%S') if args.aggregation in ['Actual','Hour'] else '-',
+                                    'hour_timeend_utc': datetime.strftime(timeend_utc_datetime + timedelta(hours=int(point['position'])-1), '%H:%M:%S') if args.aggregation in ['Actual','Hour'] else '-',
                                     'timeend_denmark': timeend_denmark_str,
+                                    'precise_timeend_denmark': datetime.strftime(timeend_denmark + timedelta(hours=int(point['position'])), '%Y-%m-%dT%H:%M:%S') if args.aggregation in ['Actual','Hour'] else '-',
+                                    'hour_timeend_denmark': datetime.strftime(timeend_denmark + timedelta(hours=int(point['position'])), '%H:%M:%S') if args.aggregation in ['Actual','Hour'] else '-',
+                                    'hour_interval_denmark': f"{datetime.strftime(timestart_denmark + timedelta(hours=int(point['position'])-1), '%H:%M:%S')}-{datetime.strftime(timeend_denmark + timedelta(hours=int(point['position'])), '%H:%M:%S')}" if args.aggregation in ['Actual','Hour'] else '-',
+                                    'hour_interval_utc': f"{datetime.strftime(timestart_utc_datetime + timedelta(hours=int(point['position'])-1), '%H:%M:%S')}-{datetime.strftime(timeend_utc_datetime + timedelta(hours=int(point['position'])-1), '%H:%M:%S')}" if args.aggregation in ['Actual','Hour'] else '-',
                                     'point_position': point['position'],
                                     'point_out_quantity': str(point['out_Quantity.quantity']).replace('.',','),
                                     'point_out_quality': point['out_Quantity.quality']
@@ -292,7 +304,7 @@ def main():
     # If mode is get data, get data
     elif args.mode == 'get':
         # Date argument validation
-        if args.fromdate and not args.todate or args.todate and not args.fromdate:
+        if not args.fromdate or not args.todate:
             sys.exit('Error: You must specify both a from date and a to date. Exiting.')
         try:
             from_date = datetime.strptime(args.fromdate, '%Y-%m-%d').date()
