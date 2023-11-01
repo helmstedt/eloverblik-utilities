@@ -1,7 +1,6 @@
 *.token
 *.csv
 *.json
-eloverblik_thirdparty.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
