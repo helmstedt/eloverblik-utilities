@@ -272,6 +272,7 @@ def main():
     parser.add_argument('-t', '--todate', help='Get data to and including this date in get mode, format yyyy-mm-dd', type=str)
     parser.add_argument('-d', '--deletetoken', help='Delete existing token file', action='store_true')
     parser.add_argument('-r', '--refreshdatatoken', help='Force refresh of data access token by deleting token file', action='store_true')
+    parser.add_argument('-lt', '--loadtoken', help='Load token from a text file in the same folder as the program, e.g. "token.txt"', type=str)
     args = parser.parse_args()
 
     # Delete token file if set as argument
@@ -285,15 +286,23 @@ def main():
         os.remove(data_access_token_filename)
 
     # Load or save token
-    if not exists(token_filename):
+    if exists(token_filename):
+        with open(token_filename, 'rb') as token_file:
+            token = pickle.load(token_file)
+    elif not args.loadtoken:
         print('No token from eloverblik.dk saved. Paste your token here.')
         token = str(input('Token: '))
         with open(token_filename, 'wb') as token_file:
             pickle.dump(token, token_file)
-    else:
-        with open(token_filename, 'rb') as token_file:
-            token = pickle.load(token_file)
-  
+    elif args.loadtoken:
+        try:
+            with open(args.loadtoken, 'rt') as token_textfile:
+                token = token_textfile.readline()
+                with open(token_filename, 'wb') as token_file:
+                    pickle.dump(token, token_file)
+        except FileNotFoundError:
+            sys.exit(f'Error: Token could not be loaded from a text file. A text file with the name {args.loadtoken} could not be found. Exiting.')
+        
     # If mode is list meters, get a list of meters
     if args.mode == 'list':
         print('Listing available meters...')
